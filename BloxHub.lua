@@ -1,18 +1,47 @@
 --[[
     ╔══════════════════════════════════════════════╗
-    ║            BLOX HUB v1.0                     ║
+    ║            BLOX HUB v1.1                     ║
     ║     All-in-One General Script Hub            ║
     ║     Blox-Scripts by Jokskuyy                 ║
     ╠══════════════════════════════════════════════╣
     ║  Modules:                                    ║
     ║    ✈  Fly      - Terbang + Speed Control     ║
     ║    🍀 Luck     - Auto Detect Luck Values     ║
+    ║    ⚔  Farm     - Auto Replay + Next Stage     ║
     ╚══════════════════════════════════════════════╝
 
     Keybinds:
     - F          : Toggle Fly
     - RightShift : Show/Hide Hub
+    
+    Auto-teleport: Script otomatis jalan lagi setelah pindah stage
 ]]
+
+-- ============================================
+-- AUTO RE-EXECUTE AFTER TELEPORT
+-- ============================================
+-- Ini membuat script otomatis jalan lagi ketika game teleport ke stage baru
+local SCRIPT_SOURCE = game:HttpGet and "https://raw.githubusercontent.com/Jokskuyy/Blox-Scripts/main/BloxHub.lua" or nil
+
+if queue_on_teleport then
+    -- Jika ada URL, gunakan loadstring dari URL
+    if SCRIPT_SOURCE then
+        queue_on_teleport('loadstring(game:HttpGet("' .. SCRIPT_SOURCE .. '", true))()')
+    else
+        -- Fallback: queue seluruh script ini
+        queue_on_teleport(game:HttpGet and game:HttpGet(SCRIPT_SOURCE, true) or "")
+    end
+    print("[✅ Blox Hub] queue_on_teleport aktif — auto re-execute saat pindah stage")
+elseif queueonteleport then
+    -- Beberapa executor pakai nama berbeda
+    if SCRIPT_SOURCE then
+        queueonteleport('loadstring(game:HttpGet("' .. SCRIPT_SOURCE .. '", true))()')
+    end
+    print("[✅ Blox Hub] queueonteleport aktif")
+else
+    print("[⚠ Blox Hub] Executor tidak support queue_on_teleport")
+    print("[⚠ Blox Hub] Script harus di-execute ulang manual setelah pindah stage")
+end
 
 -- ============================================
 -- SERVICES
@@ -1848,10 +1877,11 @@ task.spawn(function()
 end)
 
 print("═══════════════════════════════════════")
-print("  ⚡ BLOX HUB v1.0 Loaded!")
+print("  ⚡ BLOX HUB v1.1 Loaded!")
 print("  ✈  F          = Toggle Fly")
 print("  🍀 Auto-scan  = Luck Detector")
 print("  🔁 Monitor    = 0.2s Interval")
 print("  ⚔  Farm       = Auto Replay")
 print("  👁  RightShift = Show/Hide Hub")
+print("  🚀 Teleport   = Auto re-execute")
 print("═══════════════════════════════════════")
