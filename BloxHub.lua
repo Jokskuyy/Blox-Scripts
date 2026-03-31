@@ -94,10 +94,11 @@ local monitoring    = false
 
 -- Farm state
 local farming          = false
+local farmReplaysPerStage = 5
+local farmCurrentReplay   = 0
 local farmTotalStages     = 0
 local farmTotalReplays    = 0
 local farmLog             = {}
-local AUTO_FARM_ON_INIT   = true
 
 -- ============================================
 -- HELPERS
@@ -826,7 +827,7 @@ local function buildHub()
     replayLabel.Size = UDim2.new(0.5, 0, 0, 16)
     replayLabel.Position = UDim2.new(0, 12, 0, 6)
     replayLabel.BackgroundTransparency = 1
-    replayLabel.Text = "Entries Left"
+    replayLabel.Text = "Replay"
     replayLabel.TextColor3 = C.textDim
     replayLabel.TextSize = 10
     replayLabel.Font = Enum.Font.Gotham
@@ -838,7 +839,7 @@ local function buildHub()
     replayVal.Size = UDim2.new(0.5, -12, 0, 22)
     replayVal.Position = UDim2.new(0, 12, 0, 22)
     replayVal.BackgroundTransparency = 1
-    replayVal.Text = "-"
+    replayVal.Text = "0 / 5"
     replayVal.TextColor3 = C.cyan
     replayVal.TextSize = 16
     replayVal.Font = Enum.Font.GothamBold
@@ -871,36 +872,69 @@ local function buildHub()
     stageVal.Parent = statsCard
     refs.StageVal = stageVal
 
-    -- Replay mode info (dynamic from EntriesLeft)
-    local replayMode = Instance.new("Frame")
-    replayMode.Size = UDim2.new(1, 0, 0, 34)
-    replayMode.Position = UDim2.new(0, 0, 0, 128)
-    replayMode.BackgroundColor3 = C.bgCard
-    replayMode.BorderSizePixel = 0
-    replayMode.Parent = farmPage
-    corner(replayMode, 8)
+    -- Replay setting
+    local replaySetting = Instance.new("Frame")
+    replaySetting.Size = UDim2.new(1, 0, 0, 34)
+    replaySetting.Position = UDim2.new(0, 0, 0, 128)
+    replaySetting.BackgroundColor3 = C.bgCard
+    replaySetting.BorderSizePixel = 0
+    replaySetting.Parent = farmPage
+    corner(replaySetting, 8)
 
-    local replayModeLabel = Instance.new("TextLabel")
-    replayModeLabel.Size = UDim2.new(0.55, 0, 1, 0)
-    replayModeLabel.Position = UDim2.new(0, 12, 0, 0)
-    replayModeLabel.BackgroundTransparency = 1
-    replayModeLabel.Text = "Mode Replay"
-    replayModeLabel.TextColor3 = C.text
-    replayModeLabel.TextSize = 12
-    replayModeLabel.Font = Enum.Font.GothamMedium
-    replayModeLabel.TextXAlignment = Enum.TextXAlignment.Left
-    replayModeLabel.Parent = replayMode
+    local rpLabel = Instance.new("TextLabel")
+    rpLabel.Size = UDim2.new(0.6, 0, 1, 0)
+    rpLabel.Position = UDim2.new(0, 12, 0, 0)
+    rpLabel.BackgroundTransparency = 1
+    rpLabel.Text = "Replay per Stage"
+    rpLabel.TextColor3 = C.text
+    rpLabel.TextSize = 12
+    rpLabel.Font = Enum.Font.GothamMedium
+    rpLabel.TextXAlignment = Enum.TextXAlignment.Left
+    rpLabel.Parent = replaySetting
 
-    local replayModeValue = Instance.new("TextLabel")
-    replayModeValue.Size = UDim2.new(0.45, -12, 1, 0)
-    replayModeValue.Position = UDim2.new(0.55, 0, 0, 0)
-    replayModeValue.BackgroundTransparency = 1
-    replayModeValue.Text = "Auto EntriesLeft"
-    replayModeValue.TextColor3 = C.gold
-    replayModeValue.TextSize = 11
-    replayModeValue.Font = Enum.Font.GothamBold
-    replayModeValue.TextXAlignment = Enum.TextXAlignment.Right
-    replayModeValue.Parent = replayMode
+    local rpMinus = Instance.new("TextButton")
+    rpMinus.Size = UDim2.new(0, 26, 0, 26)
+    rpMinus.Position = UDim2.new(1, -90, 0.5, -13)
+    rpMinus.BackgroundColor3 = C.bgInput
+    rpMinus.BorderSizePixel = 0
+    rpMinus.Text = "-"
+    rpMinus.TextColor3 = C.text
+    rpMinus.TextSize = 16
+    rpMinus.Font = Enum.Font.GothamBold
+    rpMinus.Parent = replaySetting
+    corner(rpMinus, 6)
+
+    local rpValue = Instance.new("TextLabel")
+    rpValue.Size = UDim2.new(0, 28, 0, 26)
+    rpValue.Position = UDim2.new(1, -62, 0.5, -13)
+    rpValue.BackgroundTransparency = 1
+    rpValue.Text = "5"
+    rpValue.TextColor3 = C.gold
+    rpValue.TextSize = 15
+    rpValue.Font = Enum.Font.GothamBold
+    rpValue.Parent = replaySetting
+    refs.RpValue = rpValue
+
+    local rpPlus = Instance.new("TextButton")
+    rpPlus.Size = UDim2.new(0, 26, 0, 26)
+    rpPlus.Position = UDim2.new(1, -34, 0.5, -13)
+    rpPlus.BackgroundColor3 = C.bgInput
+    rpPlus.BorderSizePixel = 0
+    rpPlus.Text = "+"
+    rpPlus.TextColor3 = C.text
+    rpPlus.TextSize = 16
+    rpPlus.Font = Enum.Font.GothamBold
+    rpPlus.Parent = replaySetting
+    corner(rpPlus, 6)
+
+    rpMinus.MouseButton1Click:Connect(function()
+        farmReplaysPerStage = math.max(1, farmReplaysPerStage - 1)
+        rpValue.Text = tostring(farmReplaysPerStage)
+    end)
+    rpPlus.MouseButton1Click:Connect(function()
+        farmReplaysPerStage = math.min(10, farmReplaysPerStage + 1)
+        rpValue.Text = tostring(farmReplaysPerStage)
+    end)
 
     -- Farm log scroll
     local logTitle = Instance.new("TextLabel")
@@ -1448,45 +1482,27 @@ local function addFarmLog(msg, color)
     m.Parent = row
 end
 
-local function containsKeyword(text, keywords)
-    if text == nil then return false end
-    local lo = tostring(text):lower()
-    for _, kw in ipairs(keywords) do
-        if lo:find(kw:lower(), 1, true) then
-            return true
-        end
-    end
-    return false
-end
-
-local function isGuiActuallyVisible(guiObj)
-    if not guiObj or not guiObj:IsA("GuiObject") then return false end
-    if guiObj.AbsoluteSize.X <= 0 or guiObj.AbsoluteSize.Y <= 0 then return false end
-
-    local current = guiObj
-    while current do
-        if current:IsA("GuiObject") and not current.Visible then
-            return false
-        end
-        if current:IsA("ScreenGui") and not current.Enabled then
-            return false
-        end
-        current = current.Parent
-    end
-    return true
-end
-
 -- Cari tombol di PlayerGui berdasarkan keywords (generic)
-local function findButton(keywords, root)
-    local pg = root or player:FindFirstChild("PlayerGui")
-    if not pg then return nil, nil end
-
-    for _, obj in ipairs(pg:GetDescendants()) do
-        if obj:IsA("TextButton") or obj:IsA("ImageButton") then
-            local nameMatch = containsKeyword(obj.Name, keywords)
-            local textMatch = obj:IsA("TextButton") and containsKeyword(obj.Text, keywords)
-            if (nameMatch or textMatch) and isGuiActuallyVisible(obj) then
-                return obj, obj:GetFullName()
+local function findButton(keywords)
+    local pg = player:FindFirstChild("PlayerGui")
+    if not pg then return nil end
+    
+    local results = deepSearch(pg, keywords, 0, 8)
+    for _, r in ipairs(results) do
+        if r.object:IsA("TextButton") or r.object:IsA("ImageButton") then
+            local visible = r.object.Visible
+            if visible then
+                local parent = r.object.Parent
+                while parent and parent:IsA("GuiObject") do
+                    if not parent.Visible then
+                        visible = false
+                        break
+                    end
+                    parent = parent.Parent
+                end
+            end
+            if visible then
+                return r.object, r.name
             end
         end
     end
@@ -1574,82 +1590,47 @@ local function findStartButton()
 end
 
 -- Navigate ke RoundEnd > Frame (shared helper)
-local function getRoundEndRoot()
+local function getRoundEndFrame()
     local pg = player:FindFirstChild("PlayerGui")
     if not pg then return nil end
     for _, gui in ipairs(pg:GetChildren()) do
         if gui:IsA("ScreenGui") then
             local roundEnd = gui:FindFirstChild("RoundEnd", true)
-            if roundEnd then return roundEnd end
+            if roundEnd then
+                local frame = roundEnd:FindFirstChild("Frame")
+                if frame then return frame end
+            end
         end
-    end
-    return nil
-end
-
-local function getRoundEndFrame()
-    local roundEnd = getRoundEndRoot()
-    if not roundEnd then return nil end
-    local frame = roundEnd:FindFirstChild("Frame")
-    if frame then return frame end
-    return nil
-end
-
-local function getRoundEndContents()
-    local frame = getRoundEndFrame()
-    if not frame then return nil end
-    return frame:FindFirstChild("Contents")
-end
-
-local function getRoundEndButtonsContainer()
-    local contents = getRoundEndContents()
-    if not contents then return nil end
-    local holder = contents:FindFirstChild("ButtonsHolder")
-    if not holder then return nil end
-    return holder:FindFirstChild("Buttons")
-end
-
-local function getRoundEndListRewards()
-    local contents = getRoundEndContents()
-    if not contents then return nil end
-    local rewards = contents:FindFirstChild("Rewards")
-    if not rewards then return nil end
-    return rewards:FindFirstChild("List")
-end
-
-local function getRewardValueObject(name)
-    local list = getRoundEndListRewards()
-    if not list then return nil end
-    return list:FindFirstChild(name)
-end
-
-local function getRoundRewardSnapshot()
-    local snap = {}
-    for _, rewardName in ipairs({"Gems", "Coins", "Candy"}) do
-        local obj = getRewardValueObject(rewardName)
-        if obj then
-            local val = obj:IsA("TextLabel") and obj.Text or obj.Name
-            table.insert(snap, rewardName .. "=" .. tostring(val))
-        end
-    end
-    if #snap > 0 then
-        return table.concat(snap, " | ")
     end
     return nil
 end
 
 -- Ambil tombol exact dari RoundEnd > Frame > Contents > ButtonsHolder > Buttons
 local function getRestartButton()
-    local buttons = getRoundEndButtonsContainer()
+    local frame = getRoundEndFrame()
+    if not frame then return nil end
+    local contents = frame:FindFirstChild("Contents")
+    if not contents then return nil end
+    local holder = contents:FindFirstChild("ButtonsHolder")
+    if not holder then return nil end
+    local buttons = holder:FindFirstChild("Buttons")
     if not buttons then return nil end
     return buttons:FindFirstChild("RestartButton")
 end
 
 local function getNextStageButton()
-    local buttons = getRoundEndButtonsContainer()
+    local frame = getRoundEndFrame()
+    if not frame then return nil end
+    local contents = frame:FindFirstChild("Contents")
+    if not contents then return nil end
+    local holder = contents:FindFirstChild("ButtonsHolder")
+    if not holder then return nil end
+    local buttons = holder:FindFirstChild("Buttons")
     if not buttons then return nil end
     return buttons:FindFirstChild("NextStageButton")
 end
 
+<<<<<<< HEAD
 local function getLobbyButton()
     local buttons = getRoundEndButtonsContainer()
     if not buttons then return nil end
@@ -1677,63 +1658,43 @@ local function parseEntriesLeftText(text)
 end
 
 -- Baca EntriesLeft dari path exact dulu, lalu fallback scan teks RoundEnd
+=======
+-- Baca EntriesLeft → "4 daily rewards left for..." → return angka
+>>>>>>> parent of 614f636 (Refactor farm flow with adaptive startup and EntriesLeft-driven logic)
 local function getEntriesLeft()
     local frame = getRoundEndFrame()
     if not frame then return nil end
-
-    local contents = getRoundEndContents()
-    if contents then
-        local entriesLeft = contents:FindFirstChild("EntriesLeft")
-        if entriesLeft and entriesLeft:IsA("TextLabel") then
-            local text = entriesLeft.Text or ""
-            local parsed = parseEntriesLeftText(text)
-            if parsed ~= nil then
-                return parsed, text, entriesLeft
-            end
-        end
+    local contents = frame:FindFirstChild("Contents")
+    if not contents then return nil end
+    local entriesLeft = contents:FindFirstChild("EntriesLeft")
+    if not entriesLeft then return nil end
+    if entriesLeft:IsA("TextLabel") then
+        local text = entriesLeft.Text
+        local num = text:match("(%d+)")
+        if num then return tonumber(num), text end
     end
-
-    for _, obj in ipairs(frame:GetDescendants()) do
-        if obj:IsA("TextLabel") or obj:IsA("TextButton") then
-            local text = obj.Text or ""
-            local parsed = parseEntriesLeftText(text)
-            if parsed ~= nil then
-                return parsed, text, obj
-            end
-        end
-    end
-
     return nil
 end
 
 -- Cek apakah RoundEnd visible
 local function isRoundEndVisible()
     local frame = getRoundEndFrame()
-    return isGuiActuallyVisible(frame)
-end
-
-local function waitForEntriesLeft(timeout)
-    timeout = timeout or 8
-    local elapsed = 0
-    local lastText = nil
-    while farming and elapsed < timeout do
-        local entries, text, obj = getEntriesLeft()
-        if text and text ~= "" then
-            lastText = text
-        end
-        if entries ~= nil then
-            return entries, text, obj
-        end
-        task.wait(0.5)
-        elapsed = elapsed + 0.5
+    if not frame then return false end
+    -- Cek visibility dari RoundEnd frame dan parent
+    local current = frame
+    while current and current:IsA("GuiObject") do
+        if not current.Visible then return false end
+        current = current.Parent
     end
-    return nil, lastText, nil
+    return true
 end
 
-local function waitForActionButton(getExactFn, keywords, timeout, statusMsg, fallbackRootGetter)
-    timeout = timeout or 12
+-- Tunggu RoundEnd muncul
+local function waitForRoundEnd(timeout, statusMsg)
+    timeout = timeout or 180
     local elapsed = 0
     while farming and elapsed < timeout do
+<<<<<<< HEAD
         if getExactFn then
             local exactBtn = getExactFn()
             if isGuiActuallyVisible(exactBtn) then
@@ -1749,13 +1710,32 @@ local function waitForActionButton(getExactFn, keywords, timeout, statusMsg, fal
             end
         end
 
+=======
+        if isRoundEndVisible() then return true end
+>>>>>>> parent of 614f636 (Refactor farm flow with adaptive startup and EntriesLeft-driven logic)
         if statusMsg then
-            refs.FarmStatus.Text = statusMsg .. " (" .. math.floor(elapsed) .. "s)"
+            refs.FarmStatus.Text = statusMsg .. " (" .. elapsed .. "s)"
         end
-        task.wait(0.5)
-        elapsed = elapsed + 0.5
+        task.wait(1)
+        elapsed = elapsed + 1
     end
-    return nil, nil, nil
+    return false
+end
+
+-- Tunggu tombol generic muncul (untuk Start/Ready)
+local function waitForButton(keywords, timeout, statusMsg)
+    timeout = timeout or 60
+    local elapsed = 0
+    while farming and elapsed < timeout do
+        local btn, name = findButton(keywords)
+        if btn then return btn, name end
+        if statusMsg then
+            refs.FarmStatus.Text = statusMsg .. " (" .. elapsed .. "s)"
+        end
+        task.wait(1)
+        elapsed = elapsed + 1
+    end
+    return nil, nil
 end
 
 -- Klik tombol secara programmatik — coba SEMUA method
@@ -1837,6 +1817,7 @@ local function clickButton(btn)
     return #methods > 0
 end
 
+<<<<<<< HEAD
 -- Klik tombol lalu tunggu — tidak perlu retry berlebihan
 local function clickAndWait(btn, waitTime)
     waitTime = waitTime or 1.5
@@ -1846,6 +1827,8 @@ local function clickAndWait(btn, waitTime)
     return result
 end
 
+=======
+>>>>>>> parent of 614f636 (Refactor farm flow with adaptive startup and EntriesLeft-driven logic)
 local function toggleFarm()
     farming = not farming
     if farming then
@@ -1853,12 +1836,12 @@ local function toggleFarm()
         tween(refs.FarmToggleKnob, {Position = UDim2.new(1, -24, 0.5, -11), BackgroundColor3 = C.white}):Play()
         refs.FarmStatus.Text = "Status: ⚔ FARMING"
         refs.FarmStatus.TextColor3 = C.green
-        refs.ReplayVal.Text = "-"
+        farmCurrentReplay = 0
         addFarmLog("▶ Farm dimulai!", C.green)
         
         -- Debug: cek EntriesLeft
         local entries, txt = getEntriesLeft()
-        if entries ~= nil then
+        if entries then
             addFarmLog("📋 EntriesLeft: " .. entries .. " (" .. txt .. ")", C.gold)
         else
             addFarmLog("ℹ EntriesLeft belum tersedia", C.textDim)
@@ -1874,22 +1857,15 @@ end
 
 refs.FarmToggleBtn.MouseButton1Click:Connect(toggleFarm)
 
-if AUTO_FARM_ON_INIT then
-    task.delay(1, function()
-        if not farming then
-            toggleFarm()
-            addFarmLog("🤖 Auto Farm ON saat inisialisasi", C.green)
-        end
-    end)
-end
-
 -- ============================================
 -- MAIN FARM LOOP
--- Adaptive state flow:
---   - Jika RoundEnd terlihat, pakai EntriesLeft untuk putuskan Next/Restart
---   - Jika RoundEnd tidak terlihat, cari Ready/Start secara dinamis
+-- Exact paths from game:
+--   RestartButton: RoundEnd > Frame > Contents > ButtonsHolder > Buttons > RestartButton
+--   NextStageButton: RoundEnd > Frame > Contents > ButtonsHolder > Buttons > NextStageButton
+--   EntriesLeft: RoundEnd > Frame > Contents > EntriesLeft ("X daily rewards left...")
 -- ============================================
 task.spawn(function()
+<<<<<<< HEAD
     local roundEndCycleActive = false
     local pendingRoundDecision = nil -- "next" | "restart" | "transition"
     local lastActionAt = 0
@@ -1926,16 +1902,18 @@ task.spawn(function()
             addFarmLog(msg, color or C.orange)
         end
     end
+=======
+    local isFirstRun = true
+>>>>>>> parent of 614f636 (Refactor farm flow with adaptive startup and EntriesLeft-driven logic)
 
     while true do
         if not farming then
             task.wait(0.5)
-            roundEndCycleActive = false
-            pendingRoundDecision = nil
-            lastStatusKey = ""
+            isFirstRun = true
             continue
         end
 
+<<<<<<< HEAD
         local roundEndVisible = isRoundEndVisible()
 
         if roundEndVisible then
@@ -2054,9 +2032,18 @@ task.spawn(function()
                 task.wait(0.8)
                 continue
             end
+=======
+        -- ════════════════════════════════════
+        -- STEP 1: Tombol Start (hanya pertama kali)
+        -- ════════════════════════════════════
+        if isFirstRun then
+            refs.FarmStatus.Text = "Status: Mencari Start..."
+            refs.FarmStatus.TextColor3 = C.orange
+>>>>>>> parent of 614f636 (Refactor farm flow with adaptive startup and EntriesLeft-driven logic)
 
             local startBtn, startName = findStartButton()
             if startBtn then
+<<<<<<< HEAD
                 setFarmStatus("pre-start", "Status: 🎮 Menekan Start...", C.cyan)
                 if canAct(1) then
                     clickButton(startBtn)
@@ -2066,11 +2053,140 @@ task.spawn(function()
                 end
                 task.wait(0.8)
                 continue
+=======
+                addFarmLog("🎮 Start: " .. startName, C.cyan)
+                clickButton(startBtn)
+                task.wait(2)
+            else
+                addFarmLog("ℹ Start tidak ada (sudah di stage)", C.textDim)
+            end
+            isFirstRun = false
+        end
+
+        if not farming then continue end
+
+        -- ════════════════════════════════════
+        -- STEP 2: Tombol Ready
+        -- ════════════════════════════════════
+        refs.FarmStatus.Text = "Status: Mencari Ready..."
+        refs.FarmStatus.TextColor3 = C.orange
+
+        local readyBtn, readyName = waitForButton(
+            {"ready", "siap", "go", "fight", "confirm"},
+            30,
+            "Mencari Ready..."
+        )
+
+        if readyBtn and farming then
+            addFarmLog("✅ Ready: " .. readyName, C.green)
+            clickButton(readyBtn)
+            task.wait(2)
+        elseif farming then
+            addFarmLog("⚠ Ready tidak ditemukan, lanjut...", C.orange)
+        end
+
+        if not farming then continue end
+
+        -- ════════════════════════════════════
+        -- STEP 3: Tunggu Battle Selesai (RoundEnd muncul)
+        -- ════════════════════════════════════
+        refs.FarmStatus.Text = "Status: ⚔ Battle..."
+        refs.FarmStatus.TextColor3 = C.gold
+
+        local roundEndAppeared = waitForRoundEnd(180, "⚔ Battle...")
+
+        if not farming then continue end
+
+        if roundEndAppeared then
+            task.wait(1.5) -- tunggu animasi RoundEnd
+
+            farmCurrentReplay = farmCurrentReplay + 1
+            farmTotalReplays = farmTotalReplays + 1
+            addFarmLog("⚔ Battle selesai! (#" .. farmCurrentReplay .. ")", C.green)
+
+            -- ════════════════════════════════════
+            -- STEP 4: Baca EntriesLeft (reward tersisa)
+            -- ════════════════════════════════════
+            local entriesLeft, entriesText = getEntriesLeft()
+            
+            if entriesLeft then
+                addFarmLog("📦 Entries left: " .. entriesLeft .. " — " .. entriesText, C.gold)
+                refs.ReplayVal.Text = entriesLeft .. " left"
+            else
+                -- Fallback counter manual
+                local remaining = farmReplaysPerStage - farmCurrentReplay
+                addFarmLog("📦 Counter: " .. remaining .. " tersisa (manual)", C.gold)
+                refs.ReplayVal.Text = farmCurrentReplay .. " / " .. farmReplaysPerStage
+>>>>>>> parent of 614f636 (Refactor farm flow with adaptive startup and EntriesLeft-driven logic)
             end
 
-            setFarmStatus("pre-wait", "Status: Menunggu Ready / EntriesLeft...", C.orange)
-            task.wait(0.6)
+            task.wait(0.5)
+
+            -- ════════════════════════════════════
+            -- STEP 5: Keputusan → Retry atau Next
+            -- ════════════════════════════════════
+            local shouldNext = false
+            
+            if entriesLeft then
+                -- Pakai EntriesLeft dari game
+                shouldNext = (entriesLeft <= 0)
+            else
+                -- Fallback: pakai counter manual
+                shouldNext = (farmCurrentReplay >= farmReplaysPerStage)
+            end
+
+            if shouldNext then
+                -- ── NEXT STAGE ──
+                addFarmLog("🔄 Reward habis → Next Stage", C.gold)
+                task.wait(1)
+
+                local nextBtn = getNextStageButton()
+                if nextBtn then
+                    clickButton(nextBtn)
+                    addFarmLog("➡ Klik NextStageButton!", C.cyan)
+                    farmTotalStages = farmTotalStages + 1
+                    refs.StageVal.Text = tostring(farmTotalStages)
+                else
+                    -- Fallback generic
+                    local btn, name = findButton({"next", "continue", "lanjut"})
+                    if btn then
+                        clickButton(btn)
+                        addFarmLog("➡ Next (fallback): " .. name, C.cyan)
+                        farmTotalStages = farmTotalStages + 1
+                        refs.StageVal.Text = tostring(farmTotalStages)
+                    else
+                        addFarmLog("⚠ NextStageButton tidak ditemukan!", C.red)
+                    end
+                end
+
+                farmCurrentReplay = 0
+                refs.ReplayVal.Text = "0"
+                task.wait(3) -- tunggu transisi stage
+            else
+                -- ── RESTART/RETRY ──
+                local restartBtn = getRestartButton()
+                if restartBtn then
+                    clickButton(restartBtn)
+                    addFarmLog("🔁 Klik RestartButton!", C.cyan)
+                else
+                    -- Fallback generic
+                    local btn, name = findButton({"restart", "retry", "replay", "again"})
+                    if btn then
+                        clickButton(btn)
+                        addFarmLog("🔁 Restart (fallback): " .. name, C.cyan)
+                    else
+                        addFarmLog("⚠ RestartButton tidak ditemukan!", C.red)
+                    end
+                end
+
+                task.wait(2)
+            end
+        else
+            addFarmLog("⚠ Timeout (3min), retry...", C.orange)
+            task.wait(2)
         end
+
+        task.wait(1)
     end
 end)
 
