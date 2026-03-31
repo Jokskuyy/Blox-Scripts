@@ -1758,44 +1758,12 @@ local function waitForActionButton(getExactFn, keywords, timeout, statusMsg, fal
     return nil, nil, nil
 end
 
--- Klik tombol secara programmatik (multi-method)
+-- Klik tombol secara programmatik (stop setelah method pertama berhasil)
 local function clickButton(btn)
     if not btn then return false end
     
-    local clicked = false
-    
-    -- Method 1: firesignal (paling reliable di banyak executor)
-    pcall(function()
-        if firesignal then
-            firesignal(btn.MouseButton1Click)
-            clicked = true
-        end
-    end)
-    
-    -- Method 2: firesignal Activated
-    pcall(function()
-        if firesignal and btn.Activated then
-            firesignal(btn.Activated)
-            clicked = true
-        end
-    end)
-    
-    -- Method 3: Fire event langsung
-    pcall(function()
-        btn.MouseButton1Click:Fire()
-        clicked = true
-    end)
-    
-    -- Method 4: Simulate mouse down + up
-    pcall(function()
-        btn.MouseButton1Down:Fire()
-        task.wait(0.05)
-        btn.MouseButton1Up:Fire()
-        clicked = true
-    end)
-    
-    -- Method 5: Virtual Input (gerakkan mouse ke tombol lalu klik)
-    pcall(function()
+    -- Method 1: Virtual Input (paling reliable — simulasi mouse asli)
+    local ok1 = pcall(function()
         local VIM = game:GetService("VirtualInputManager")
         local pos = btn.AbsolutePosition
         local size = btn.AbsoluteSize
@@ -1804,42 +1772,41 @@ local function clickButton(btn)
         VIM:SendMouseButtonEvent(cx, cy, 0, true, game, 1)
         task.wait(0.05)
         VIM:SendMouseButtonEvent(cx, cy, 0, false, game, 1)
-        clicked = true
     end)
+    if ok1 then return true end
     
-    -- Method 6: fireproximityprompt / click detector fallback
-    pcall(function()
-        if fireclickdetector then
-            fireclickdetector(btn)
-            clicked = true
+    -- Method 2: firesignal
+    local ok2 = pcall(function()
+        if firesignal then
+            firesignal(btn.MouseButton1Click)
         end
     end)
+    if ok2 and firesignal then return true end
     
-    return clicked
+    -- Method 3: Fire event langsung
+    local ok3 = pcall(function()
+        btn.MouseButton1Click:Fire()
+    end)
+    if ok3 then return true end
+    
+    -- Method 4: MouseButton1Down + Up
+    local ok4 = pcall(function()
+        btn.MouseButton1Down:Fire()
+        task.wait(0.05)
+        btn.MouseButton1Up:Fire()
+    end)
+    if ok4 then return true end
+    
+    return false
 end
 
-local function clickActionWithRetry(btn, tries, waitAfterClick)
-    tries = tries or 3
-    waitAfterClick = waitAfterClick or 0.8
-
-    for _ = 1, tries do
-        if not isGuiActuallyVisible(btn) then
-            return true
-        end
-
-        clickButton(btn)
-        task.wait(waitAfterClick)
-
-        -- Di beberapa game tombol menghilang sesaat setelah click valid.
-        if not isGuiActuallyVisible(btn) then
-            return true
-        end
-
-        if not isRoundEndVisible() then
-            return true
-        end
-    end
-    return false
+-- Klik tombol lalu tunggu — tidak perlu retry berlebihan
+local function clickAndWait(btn, waitTime)
+    waitTime = waitTime or 1.5
+    if not btn then return false end
+    local result = clickButton(btn)
+    task.wait(waitTime)
+    return result
 end
 
 local function toggleFarm()
@@ -1991,17 +1958,12 @@ task.spawn(function()
                 )
 
                 if nextBtn and canAct(0.7) then
-                    local ok = clickActionWithRetry(nextBtn, 3, 0.8)
+                    clickAndWait(nextBtn, 2)
                     markAct()
-                    if ok then
-                        addFarmLog("➡ Next clicked (" .. nextSource .. "): " .. nextName, C.cyan)
-                        farmTotalStages = farmTotalStages + 1
-                        refs.StageVal.Text = tostring(farmTotalStages)
-                        pendingRoundDecision = "transition"
-                        task.wait(1.2)
-                    else
-                        logWarn("next", 3, "⚠ Next terdeteksi tapi belum bereaksi, coba lagi...", C.orange)
-                    end
+                    addFarmLog("➡ Next clicked (" .. nextSource .. "): " .. nextName, C.cyan)
+                    farmTotalStages = farmTotalStages + 1
+                    refs.StageVal.Text = tostring(farmTotalStages)
+                    pendingRoundDecision = "transition"
                 elseif not nextBtn then
                     local lobbyBtn = getLobbyButton()
                     if isGuiActuallyVisible(lobbyBtn) then
@@ -2022,15 +1984,10 @@ task.spawn(function()
                 )
 
                 if restartBtn and canAct(0.7) then
-                    local ok = clickActionWithRetry(restartBtn, 3, 0.8)
+                    clickAndWait(restartBtn, 2)
                     markAct()
-                    if ok then
-                        addFarmLog("🔁 Restart clicked (" .. restartSource .. "): " .. restartName, C.cyan)
-                        pendingRoundDecision = "transition"
-                        task.wait(1.2)
-                    else
-                        logWarn("restart", 3, "⚠ Restart terdeteksi tapi belum bereaksi, coba lagi...", C.orange)
-                    end
+                    addFarmLog("🔁 Restart clicked (" .. restartSource .. "): " .. restartName, C.cyan)
+                    pendingRoundDecision = "transition"
                 elseif not restartBtn then
                     logWarn("restart", 3, "⚠ RestartButton belum muncul", C.orange)
                     task.wait(0.7)
