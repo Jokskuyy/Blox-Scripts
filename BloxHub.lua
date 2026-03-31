@@ -1464,7 +1464,7 @@ local function addFarmLog(msg, color)
     m.Parent = row
 end
 
--- Cari tombol di PlayerGui berdasarkan keywords
+-- Cari tombol di PlayerGui berdasarkan keywords (generic)
 local function findButton(keywords)
     local pg = player:FindFirstChild("PlayerGui")
     if not pg then return nil end
@@ -1472,7 +1472,18 @@ local function findButton(keywords)
     local results = deepSearch(pg, keywords, 0, 8)
     for _, r in ipairs(results) do
         if r.object:IsA("TextButton") or r.object:IsA("ImageButton") then
-            if r.object.Visible and r.object.Active ~= false then
+            local visible = r.object.Visible
+            if visible then
+                local parent = r.object.Parent
+                while parent and parent:IsA("GuiObject") do
+                    if not parent.Visible then
+                        visible = false
+                        break
+                    end
+                    parent = parent.Parent
+                end
+            end
+            if visible then
                 return r.object, r.name
             end
         end
@@ -1480,19 +1491,112 @@ local function findButton(keywords)
     return nil, nil
 end
 
+-- Navigate ke RoundEnd > Frame (shared helper)
+local function getRoundEndFrame()
+    local pg = player:FindFirstChild("PlayerGui")
+    if not pg then return nil end
+    for _, gui in ipairs(pg:GetChildren()) do
+        if gui:IsA("ScreenGui") then
+            local roundEnd = gui:FindFirstChild("RoundEnd", true)
+            if roundEnd then
+                local frame = roundEnd:FindFirstChild("Frame")
+                if frame then return frame end
+            end
+        end
+    end
+    return nil
+end
+
+-- Ambil tombol exact dari RoundEnd > Frame > Contents > ButtonsHolder > Buttons
+local function getRestartButton()
+    local frame = getRoundEndFrame()
+    if not frame then return nil end
+    local contents = frame:FindFirstChild("Contents")
+    if not contents then return nil end
+    local holder = contents:FindFirstChild("ButtonsHolder")
+    if not holder then return nil end
+    local buttons = holder:FindFirstChild("Buttons")
+    if not buttons then return nil end
+    return buttons:FindFirstChild("RestartButton")
+end
+
+local function getNextStageButton()
+    local frame = getRoundEndFrame()
+    if not frame then return nil end
+    local contents = frame:FindFirstChild("Contents")
+    if not contents then return nil end
+    local holder = contents:FindFirstChild("ButtonsHolder")
+    if not holder then return nil end
+    local buttons = holder:FindFirstChild("Buttons")
+    if not buttons then return nil end
+    return buttons:FindFirstChild("NextStageButton")
+end
+
+-- Baca EntriesLeft → "4 daily rewards left for..." → return angka
+local function getEntriesLeft()
+    local frame = getRoundEndFrame()
+    if not frame then return nil end
+    local contents = frame:FindFirstChild("Contents")
+    if not contents then return nil end
+    local entriesLeft = contents:FindFirstChild("EntriesLeft")
+    if not entriesLeft then return nil end
+    if entriesLeft:IsA("TextLabel") then
+        local text = entriesLeft.Text
+        local num = text:match("(%d+)")
+        if num then return tonumber(num), text end
+    end
+    return nil
+end
+
+-- Cek apakah RoundEnd visible
+local function isRoundEndVisible()
+    local frame = getRoundEndFrame()
+    if not frame then return false end
+    -- Cek visibility dari RoundEnd frame dan parent
+    local current = frame
+    while current and current:IsA("GuiObject") do
+        if not current.Visible then return false end
+        current = current.Parent
+    end
+    return true
+end
+
+-- Tunggu RoundEnd muncul
+local function waitForRoundEnd(timeout, statusMsg)
+    timeout = timeout or 180
+    local elapsed = 0
+    while farming and elapsed < timeout do
+        if isRoundEndVisible() then return true end
+        if statusMsg then
+            refs.FarmStatus.Text = statusMsg .. " (" .. elapsed .. "s)"
+        end
+        task.wait(1)
+        elapsed = elapsed + 1
+    end
+    return false
+end
+
+-- Tunggu tombol generic muncul (untuk Start/Ready)
+local function waitForButton(keywords, timeout, statusMsg)
+    timeout = timeout or 60
+    local elapsed = 0
+    while farming and elapsed < timeout do
+        local btn, name = findButton(keywords)
+        if btn then return btn, name end
+        if statusMsg then
+            refs.FarmStatus.Text = statusMsg .. " (" .. elapsed .. "s)"
+        end
+        task.wait(1)
+        elapsed = elapsed + 1
+    end
+    return nil, nil
+end
+
 -- Klik tombol secara programmatik
 local function clickButton(btn)
     if not btn then return false end
-    local ok, err = pcall(function()
-        -- Coba berbagai metode klik
+    local ok = pcall(function()
         if btn:IsA("TextButton") or btn:IsA("ImageButton") then
-            -- Method 1: Fire click directly
-            if fireclickdetector then
-                fireclickdetector(btn)
-            end
-            -- Method 2: Activate
-            btn:FindFirstAncestorWhichIsA("ScreenGui")
-            -- Method 3: Fire signal
             if firesignal then
                 firesignal(btn.MouseButton1Click)
             elseif btn.MouseButton1Click then
@@ -1512,6 +1616,14 @@ local function toggleFarm()
         refs.FarmStatus.TextColor3 = C.green
         farmCurrentReplay = 0
         addFarmLog("▶ Farm dimulai!", C.green)
+        
+        -- Debug: cek EntriesLeft
+        local entries, txt = getEntriesLeft()
+        if entries then
+            addFarmLog("📋 EntriesLeft: " .. entries .. " (" .. txt .. ")", C.gold)
+        else
+            addFarmLog("ℹ EntriesLeft belum tersedia", C.textDim)
+        end
     else
         tween(refs.FarmToggleBg, {BackgroundColor3 = C.bgInput}):Play()
         tween(refs.FarmToggleKnob, {Position = UDim2.new(0, 2, 0.5, -11), BackgroundColor3 = C.textDim}):Play()
@@ -1523,93 +1635,164 @@ end
 
 refs.FarmToggleBtn.MouseButton1Click:Connect(toggleFarm)
 
--- Main farm loop
+-- ============================================
+-- MAIN FARM LOOP
+-- Exact paths from game:
+--   RestartButton: RoundEnd > Frame > Contents > ButtonsHolder > Buttons > RestartButton
+--   NextStageButton: RoundEnd > Frame > Contents > ButtonsHolder > Buttons > NextStageButton
+--   EntriesLeft: RoundEnd > Frame > Contents > EntriesLeft ("X daily rewards left...")
+-- ============================================
 task.spawn(function()
+    local isFirstRun = true
+
     while true do
-        if farming then
-            -- Step 1: Cari tombol Play/Start/Battle
-            refs.FarmStatus.Text = "Status: Mencari tombol play..."
+        if not farming then
+            task.wait(0.5)
+            isFirstRun = true
+            continue
+        end
+
+        -- ════════════════════════════════════
+        -- STEP 1: Tombol Start (hanya pertama kali)
+        -- ════════════════════════════════════
+        if isFirstRun then
+            refs.FarmStatus.Text = "Status: Mencari Start..."
             refs.FarmStatus.TextColor3 = C.orange
+
+            local startBtn, startName = findButton({"start", "play", "enter", "mulai", "battle"})
+            if startBtn then
+                addFarmLog("🎮 Start: " .. startName, C.cyan)
+                clickButton(startBtn)
+                task.wait(2)
+            else
+                addFarmLog("ℹ Start tidak ada (sudah di stage)", C.textDim)
+            end
+            isFirstRun = false
+        end
+
+        if not farming then continue end
+
+        -- ════════════════════════════════════
+        -- STEP 2: Tombol Ready
+        -- ════════════════════════════════════
+        refs.FarmStatus.Text = "Status: Mencari Ready..."
+        refs.FarmStatus.TextColor3 = C.orange
+
+        local readyBtn, readyName = waitForButton(
+            {"ready", "siap", "go", "fight", "confirm"},
+            30,
+            "Mencari Ready..."
+        )
+
+        if readyBtn and farming then
+            addFarmLog("✅ Ready: " .. readyName, C.green)
+            clickButton(readyBtn)
+            task.wait(2)
+        elseif farming then
+            addFarmLog("⚠ Ready tidak ditemukan, lanjut...", C.orange)
+        end
+
+        if not farming then continue end
+
+        -- ════════════════════════════════════
+        -- STEP 3: Tunggu Battle Selesai (RoundEnd muncul)
+        -- ════════════════════════════════════
+        refs.FarmStatus.Text = "Status: ⚔ Battle..."
+        refs.FarmStatus.TextColor3 = C.gold
+
+        local roundEndAppeared = waitForRoundEnd(180, "⚔ Battle...")
+
+        if not farming then continue end
+
+        if roundEndAppeared then
+            task.wait(1.5) -- tunggu animasi RoundEnd
+
+            farmCurrentReplay = farmCurrentReplay + 1
+            farmTotalReplays = farmTotalReplays + 1
+            addFarmLog("⚔ Battle selesai! (#" .. farmCurrentReplay .. ")", C.green)
+
+            -- ════════════════════════════════════
+            -- STEP 4: Baca EntriesLeft (reward tersisa)
+            -- ════════════════════════════════════
+            local entriesLeft, entriesText = getEntriesLeft()
             
-            local playBtn, playName = findButton({"play", "start", "battle", "fight", "mulai", "enter"})
+            if entriesLeft then
+                addFarmLog("📦 Entries left: " .. entriesLeft .. " — " .. entriesText, C.gold)
+                refs.ReplayVal.Text = entriesLeft .. " left"
+            else
+                -- Fallback counter manual
+                local remaining = farmReplaysPerStage - farmCurrentReplay
+                addFarmLog("📦 Counter: " .. remaining .. " tersisa (manual)", C.gold)
+                refs.ReplayVal.Text = farmCurrentReplay .. " / " .. farmReplaysPerStage
+            end
+
+            task.wait(0.5)
+
+            -- ════════════════════════════════════
+            -- STEP 5: Keputusan → Retry atau Next
+            -- ════════════════════════════════════
+            local shouldNext = false
             
-            if playBtn then
-                addFarmLog("🎮 Klik: " .. playName, C.cyan)
-                clickButton(playBtn)
+            if entriesLeft then
+                -- Pakai EntriesLeft dari game
+                shouldNext = (entriesLeft <= 0)
+            else
+                -- Fallback: pakai counter manual
+                shouldNext = (farmCurrentReplay >= farmReplaysPerStage)
+            end
+
+            if shouldNext then
+                -- ── NEXT STAGE ──
+                addFarmLog("🔄 Reward habis → Next Stage", C.gold)
+                task.wait(1)
+
+                local nextBtn = getNextStageButton()
+                if nextBtn then
+                    clickButton(nextBtn)
+                    addFarmLog("➡ Klik NextStageButton!", C.cyan)
+                    farmTotalStages = farmTotalStages + 1
+                    refs.StageVal.Text = tostring(farmTotalStages)
+                else
+                    -- Fallback generic
+                    local btn, name = findButton({"next", "continue", "lanjut"})
+                    if btn then
+                        clickButton(btn)
+                        addFarmLog("➡ Next (fallback): " .. name, C.cyan)
+                        farmTotalStages = farmTotalStages + 1
+                        refs.StageVal.Text = tostring(farmTotalStages)
+                    else
+                        addFarmLog("⚠ NextStageButton tidak ditemukan!", C.red)
+                    end
+                end
+
+                farmCurrentReplay = 0
+                refs.ReplayVal.Text = "0"
+                task.wait(3) -- tunggu transisi stage
+            else
+                -- ── RESTART/RETRY ──
+                local restartBtn = getRestartButton()
+                if restartBtn then
+                    clickButton(restartBtn)
+                    addFarmLog("🔁 Klik RestartButton!", C.cyan)
+                else
+                    -- Fallback generic
+                    local btn, name = findButton({"restart", "retry", "replay", "again"})
+                    if btn then
+                        clickButton(btn)
+                        addFarmLog("🔁 Restart (fallback): " .. name, C.cyan)
+                    else
+                        addFarmLog("⚠ RestartButton tidak ditemukan!", C.red)
+                    end
+                end
+
                 task.wait(2)
             end
-            
-            -- Step 2: Tunggu stage selesai (cari tombol reward/result/claim)
-            refs.FarmStatus.Text = "Status: ⚔ Stage berlangsung..."
-            refs.FarmStatus.TextColor3 = C.gold
-            
-            local waitTime = 0
-            local maxWait = 120 -- max 2 menit tunggu per stage
-            local stageComplete = false
-            
-            while farming and waitTime < maxWait do
-                -- Cari tombol yang muncul setelah stage selesai
-                local endBtn, endName = findButton({
-                    "replay", "retry", "again", "claim", "collect",
-                    "continue", "next", "ok", "confirm", "close",
-                    "reward", "result", "lanjut", "ulangi", "selesai"
-                })
-                
-                if endBtn then
-                    stageComplete = true
-                    farmCurrentReplay = farmCurrentReplay + 1
-                    farmTotalReplays = farmTotalReplays + 1
-                    
-                    refs.ReplayVal.Text = farmCurrentReplay .. " / " .. farmReplaysPerStage
-                    addFarmLog("✅ Stage selesai! (" .. farmCurrentReplay .. "/" .. farmReplaysPerStage .. ")", C.green)
-                    
-                    -- Cek apakah sudah cukup replay
-                    if farmCurrentReplay >= farmReplaysPerStage then
-                        -- Cari tombol Next Stage
-                        addFarmLog("📦 Reward habis, cari next stage...", C.gold)
-                        task.wait(1)
-                        
-                        local nextBtn, nextName = findButton({"next", "lanjut", "continue", "forward", "advance"})
-                        if nextBtn then
-                            clickButton(nextBtn)
-                            addFarmLog("➡ Next stage: " .. nextName, C.cyan)
-                            farmTotalStages = farmTotalStages + 1
-                            refs.StageVal.Text = tostring(farmTotalStages)
-                            farmCurrentReplay = 0
-                            refs.ReplayVal.Text = "0 / " .. farmReplaysPerStage
-                        else
-                            -- Tidak ada next, coba claim/close dulu
-                            clickButton(endBtn)
-                            addFarmLog("⚠ Next tidak ditemukan, klik " .. endName, C.orange)
-                        end
-                    else
-                        -- Masih ada replay, klik replay/retry
-                        local replayBtn, rpName = findButton({"replay", "retry", "again", "ulangi", "play"})
-                        if replayBtn then
-                            clickButton(replayBtn)
-                            addFarmLog("🔁 Replay: " .. rpName, C.cyan)
-                        else
-                            clickButton(endBtn)
-                            addFarmLog("🔁 Klik: " .. endName, C.cyan)
-                        end
-                    end
-                    
-                    task.wait(2)
-                    break
-                end
-                
-                task.wait(1)
-                waitTime = waitTime + 1
-            end
-            
-            if not stageComplete and farming then
-                addFarmLog("⚠ Timeout, coba ulang...", C.orange)
-            end
-            
-            task.wait(1)
         else
-            task.wait(0.5)
+            addFarmLog("⚠ Timeout (3min), retry...", C.orange)
+            task.wait(2)
         end
+
+        task.wait(1)
     end
 end)
 
