@@ -1566,27 +1566,50 @@ local function getEntriesLeft()
     return nil
 end
 
--- Cek apakah RoundEnd visible
+-- Cek apakah RoundEnd visible (multi-signal)
 local function isRoundEndVisible()
     local frame = getRoundEndFrame()
     if not frame then return false end
-    -- Cek visibility dari RoundEnd frame dan parent
+    
+    -- Signal 1: Cek Visible property
+    local visCheck = true
     local current = frame
     while current and current:IsA("GuiObject") do
-        if not current.Visible then return false end
+        if not current.Visible then visCheck = false; break end
         current = current.Parent
     end
-    return true
+    if visCheck then return true end
+    
+    -- Signal 2: RestartButton atau NextStageButton ada & visible (tombol hanya ada saat RoundEnd muncul)
+    local restartBtn = getRestartButton()
+    if restartBtn and restartBtn.Visible then return true end
+    local nextBtn = getNextStageButton()
+    if nextBtn and nextBtn.Visible then return true end
+    
+    -- Signal 3: EntriesLeft punya teks (hanya ada saat RoundEnd)
+    local entries, txt = getEntriesLeft()
+    if entries ~= nil then return true end
+    
+    return false
 end
 
 -- Tunggu RoundEnd muncul
 local function waitForRoundEnd(timeout, statusMsg)
     timeout = timeout or 180
     local elapsed = 0
+    local lastDebugAt = 0
     while farming and elapsed < timeout do
         if isRoundEndVisible() then return true end
         if statusMsg then
             refs.FarmStatus.Text = statusMsg .. " (" .. elapsed .. "s)"
+        end
+        -- Debug log setiap 15 detik
+        if elapsed - lastDebugAt >= 15 then
+            lastDebugAt = elapsed
+            local frame = getRoundEndFrame()
+            if frame then
+                addFarmLog("⏳ Frame ada, tunggu visible... (" .. elapsed .. "s)", C.textDim)
+            end
         end
         task.wait(1)
         elapsed = elapsed + 1
@@ -1697,6 +1720,14 @@ local function toggleFarm()
 end
 
 refs.FarmToggleBtn.MouseButton1Click:Connect(toggleFarm)
+
+-- Auto farm ON saat inisialisasi (berguna setelah teleport)
+task.delay(1.5, function()
+    if not farming then
+        toggleFarm()
+        addFarmLog("🤖 Auto Farm ON (init)", C.green)
+    end
+end)
 
 -- ============================================
 -- MAIN FARM LOOP
