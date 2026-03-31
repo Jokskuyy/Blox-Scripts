@@ -1493,6 +1493,86 @@ local function findButton(keywords, root)
     return nil, nil
 end
 
+local function normalizeGuiText(s)
+    s = tostring(s or ""):lower()
+    s = s:gsub("%s+", "")
+    s = s:gsub("[%p%c]", "")
+    return s
+end
+
+local function findReadyButton()
+    local pg = player:FindFirstChild("PlayerGui")
+    if not pg then return nil, nil end
+
+    -- Pass 1: exact/strong matches only
+    for _, obj in ipairs(pg:GetDescendants()) do
+        if (obj:IsA("TextButton") or obj:IsA("ImageButton")) and isGuiActuallyVisible(obj) then
+            local n = normalizeGuiText(obj.Name)
+            local t = obj:IsA("TextButton") and normalizeGuiText(obj.Text) or ""
+            if n == "readybutton" or n == "ready" or t == "ready" or t == "siap" then
+                return obj, obj:GetFullName()
+            end
+        end
+    end
+
+    -- Pass 2: relaxed match
+    for _, obj in ipairs(pg:GetDescendants()) do
+        if (obj:IsA("TextButton") or obj:IsA("ImageButton")) and isGuiActuallyVisible(obj) then
+            local n = normalizeGuiText(obj.Name)
+            local t = obj:IsA("TextButton") and normalizeGuiText(obj.Text) or ""
+            if n:find("readybutton", 1, true) or t:find("ready", 1, true) or t:find("siap", 1, true) then
+                return obj, obj:GetFullName()
+            end
+        end
+    end
+
+    return nil, nil
+end
+
+local function findStartButton()
+    local pg = player:FindFirstChild("PlayerGui")
+    if not pg then return nil, nil end
+
+    local exactLabels = {
+        start = true,
+        play = true,
+        mulai = true,
+        battle = true,
+        enter = true,
+    }
+
+    -- Pass 1: exact/strong matches only
+    for _, obj in ipairs(pg:GetDescendants()) do
+        if (obj:IsA("TextButton") or obj:IsA("ImageButton")) and isGuiActuallyVisible(obj) then
+            local n = normalizeGuiText(obj.Name)
+            local t = obj:IsA("TextButton") and normalizeGuiText(obj.Text) or ""
+            if n == "startbutton" or n == "playbutton" or exactLabels[t] then
+                return obj, obj:GetFullName()
+            end
+        end
+    end
+
+    -- Pass 2: relaxed match
+    for _, obj in ipairs(pg:GetDescendants()) do
+        if (obj:IsA("TextButton") or obj:IsA("ImageButton")) and isGuiActuallyVisible(obj) then
+            local n = normalizeGuiText(obj.Name)
+            local t = obj:IsA("TextButton") and normalizeGuiText(obj.Text) or ""
+            if n:find("startbutton", 1, true)
+                or n:find("playbutton", 1, true)
+                or t:find("start", 1, true)
+                or t:find("play", 1, true)
+                or t:find("mulai", 1, true)
+                or t:find("battle", 1, true)
+                or t:find("enter", 1, true)
+            then
+                return obj, obj:GetFullName()
+            end
+        end
+    end
+
+    return nil, nil
+end
+
 -- Navigate ke RoundEnd > Frame (shared helper)
 local function getRoundEndRoot()
     local pg = player:FindFirstChild("PlayerGui")
@@ -1574,12 +1654,6 @@ local function getLobbyButton()
     local buttons = getRoundEndButtonsContainer()
     if not buttons then return nil end
     return buttons:FindFirstChild("LobbyButton")
-end
-
-local function getModalButton()
-    local roundEnd = getRoundEndRoot()
-    if not roundEnd then return nil end
-    return roundEnd:FindFirstChild("ModalButton")
 end
 
 local function parseEntriesLeftText(text)
@@ -1803,6 +1877,7 @@ task.spawn(function()
     local roundEndCycleActive = false
     local pendingRoundDecision = nil -- "next" | "restart" | "transition"
     local lastActionAt = 0
+    local preBattleGraceUntil = 0
     local lastStatusKey = ""
     local warnAt = {
         entries = 0,
@@ -1851,6 +1926,7 @@ task.spawn(function()
             if not roundEndCycleActive then
                 roundEndCycleActive = true
                 pendingRoundDecision = nil
+                preBattleGraceUntil = 0
                 farmTotalReplays = farmTotalReplays + 1
                 addFarmLog("⚔ Battle selesai! Total run: " .. farmTotalReplays, C.green)
 
@@ -1915,13 +1991,6 @@ task.spawn(function()
                         logWarn("next", 3, "⚠ Next terdeteksi tapi belum bereaksi, coba lagi...", C.orange)
                     end
                 elseif not nextBtn then
-                    local modalBtn = getModalButton()
-                    if isGuiActuallyVisible(modalBtn) and canAct(0.7) then
-                        clickButton(modalBtn)
-                        addFarmLog("🪟 ModalButton ditutup untuk munculkan Next", C.textDim)
-                        task.wait(0.4)
-                    end
-
                     local lobbyBtn = getLobbyButton()
                     if isGuiActuallyVisible(lobbyBtn) then
                         logWarn("next", 4, "ℹ LobbyButton tersedia, tetap tunggu Next", C.textDim)
@@ -1951,13 +2020,6 @@ task.spawn(function()
                         logWarn("restart", 3, "⚠ Restart terdeteksi tapi belum bereaksi, coba lagi...", C.orange)
                     end
                 elseif not restartBtn then
-                    local modalBtn = getModalButton()
-                    if isGuiActuallyVisible(modalBtn) and canAct(0.7) then
-                        clickButton(modalBtn)
-                        addFarmLog("🪟 ModalButton ditutup untuk munculkan Restart", C.textDim)
-                        task.wait(0.4)
-                    end
-
                     logWarn("restart", 3, "⚠ RestartButton belum muncul", C.orange)
                     task.wait(0.7)
                 end
@@ -1968,24 +2030,32 @@ task.spawn(function()
                 pendingRoundDecision = nil
             end
 
-            local readyBtn, readyName = findButton({"ready", "siap", "go", "fight", "confirm"})
+            if os.clock() < preBattleGraceUntil then
+                setFarmStatus("pre-grace", "Status: Menunggu battle mulai...", C.cyan)
+                task.wait(0.6)
+                continue
+            end
+
+            local readyBtn, readyName = findReadyButton()
             if readyBtn then
                 setFarmStatus("pre-ready", "Status: ✅ Menekan Ready...", C.green)
                 if canAct(1) then
                     clickButton(readyBtn)
                     markAct()
+                    preBattleGraceUntil = os.clock() + 12
                     addFarmLog("✅ Ready: " .. readyName, C.green)
                 end
                 task.wait(0.8)
                 continue
             end
 
-            local startBtn, startName = findButton({"start", "play", "enter", "mulai", "battle"})
+            local startBtn, startName = findStartButton()
             if startBtn then
                 setFarmStatus("pre-start", "Status: 🎮 Menekan Start...", C.cyan)
                 if canAct(1) then
                     clickButton(startBtn)
                     markAct()
+                    preBattleGraceUntil = os.clock() + 5
                     addFarmLog("🎮 Start: " .. startName, C.cyan)
                 end
                 task.wait(0.8)
