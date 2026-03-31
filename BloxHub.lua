@@ -1758,24 +1758,43 @@ local function waitForActionButton(getExactFn, keywords, timeout, statusMsg, fal
     return nil, nil, nil
 end
 
--- Klik tombol secara programmatik
--- Fire SEMUA method karena pcall success != tombol terklik di game
+-- Klik tombol secara programmatik — coba SEMUA method
 local function clickButton(btn)
     if not btn then return false end
     
-    -- Method 1: firesignal (executor-specific, paling umum)
+    local methods = {}
+    
+    -- Method 1: firesignal MouseButton1Click
     pcall(function()
         if firesignal then
             firesignal(btn.MouseButton1Click)
+            table.insert(methods, "firesignal")
         end
     end)
     
-    -- Method 2: Fire event langsung
+    -- Method 2: firesignal Activated
     pcall(function()
-        btn.MouseButton1Click:Fire()
+        if firesignal then
+            firesignal(btn.Activated)
+            table.insert(methods, "Activated")
+        end
     end)
     
-    -- Method 3: Virtual Input (simulasi mouse)
+    -- Method 3: Direct Fire
+    pcall(function()
+        btn.MouseButton1Click:Fire()
+        table.insert(methods, "Fire()")
+    end)
+    
+    -- Method 4: MouseButton1Down + Up
+    pcall(function()
+        btn.MouseButton1Down:Fire()
+        task.wait(0.05)
+        btn.MouseButton1Up:Fire()
+        table.insert(methods, "Down+Up")
+    end)
+    
+    -- Method 5: Virtual Input Manager
     pcall(function()
         local VIM = game:GetService("VirtualInputManager")
         local pos = btn.AbsolutePosition
@@ -1785,9 +1804,37 @@ local function clickButton(btn)
         VIM:SendMouseButtonEvent(cx, cy, 0, true, game, 1)
         task.wait(0.05)
         VIM:SendMouseButtonEvent(cx, cy, 0, false, game, 1)
+        table.insert(methods, "VIM")
     end)
     
-    return true
+    -- Method 6: fireclick (beberapa executor)
+    pcall(function()
+        if fireclick then
+            fireclick(btn)
+            table.insert(methods, "fireclick")
+        end
+    end)
+    
+    -- Method 7: mouse1click di posisi button
+    pcall(function()
+        if mousemoveabs and mouse1click then
+            local pos = btn.AbsolutePosition
+            local size = btn.AbsoluteSize
+            mousemoveabs(pos.X + size.X/2, pos.Y + size.Y/2)
+            task.wait(0.05)
+            mouse1click()
+            table.insert(methods, "mouse1click")
+        end
+    end)
+    
+    -- Log method yang berhasil (debug, hanya sekali)
+    if #methods > 0 then
+        print("[BloxHub] Click methods: " .. table.concat(methods, ", "))
+    else
+        print("[BloxHub] ⚠ TIDAK ADA method click yang berhasil!")
+    end
+    
+    return #methods > 0
 end
 
 -- Klik tombol lalu tunggu — tidak perlu retry berlebihan
