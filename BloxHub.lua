@@ -1891,14 +1891,6 @@ task.spawn(function()
                 end
             end
 
-            local modalBtn = getModalButton()
-            if isGuiActuallyVisible(modalBtn) and canAct(0.8) then
-                clickButton(modalBtn)
-                markAct()
-                addFarmLog("🪟 ModalButton diklik", C.textDim)
-                task.wait(0.5)
-            end
-
             if pendingRoundDecision == "next" then
                 setFarmStatus("roundend-next", "Status: 🔄 Next Stage...", C.gold)
 
@@ -1923,6 +1915,13 @@ task.spawn(function()
                         logWarn("next", 3, "⚠ Next terdeteksi tapi belum bereaksi, coba lagi...", C.orange)
                     end
                 elseif not nextBtn then
+                    local modalBtn = getModalButton()
+                    if isGuiActuallyVisible(modalBtn) and canAct(0.7) then
+                        clickButton(modalBtn)
+                        addFarmLog("🪟 ModalButton ditutup untuk munculkan Next", C.textDim)
+                        task.wait(0.4)
+                    end
+
                     local lobbyBtn = getLobbyButton()
                     if isGuiActuallyVisible(lobbyBtn) then
                         logWarn("next", 4, "ℹ LobbyButton tersedia, tetap tunggu Next", C.textDim)
@@ -1952,6 +1951,13 @@ task.spawn(function()
                         logWarn("restart", 3, "⚠ Restart terdeteksi tapi belum bereaksi, coba lagi...", C.orange)
                     end
                 elseif not restartBtn then
+                    local modalBtn = getModalButton()
+                    if isGuiActuallyVisible(modalBtn) and canAct(0.7) then
+                        clickButton(modalBtn)
+                        addFarmLog("🪟 ModalButton ditutup untuk munculkan Restart", C.textDim)
+                        task.wait(0.4)
+                    end
+
                     logWarn("restart", 3, "⚠ RestartButton belum muncul", C.orange)
                     task.wait(0.7)
                 end
