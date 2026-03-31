@@ -33,7 +33,7 @@ local player = Players.LocalPlayer
 local CONFIG = {
     AUTO_START = true,
     AUTO_REQUEUE_ON_TELEPORT = true,
-    REQUEUE_SOURCE = 'pcall(function() local ok,src=pcall(function() return game:HttpGet("https://raw.githubusercontent.com/Jokskuyy/Blox-Scripts/main/SummonHero_AutoFarm_Entries.lua") end); if ok and src and #src>0 then loadstring(src)(); return end; if loadfile then local f=loadfile("SummonHero_AutoFarm_Entries.lua"); if f then f() end end end)',
+    REQUEUE_URL = "https://raw.githubusercontent.com/Jokskuyy/Blox-Scripts/main/SummonHero_AutoFarm_Entries.lua",
     SHOW_STATUS_GUI = true,
     GUI_LOG_LINES = 12,
     MAX_STORED_LOGS = 300,
@@ -186,54 +186,109 @@ local function getPlayerGui()
     return player and player:FindFirstChild("PlayerGui")
 end
 
-local function getQueueTeleportFunction()
-    local candidates = {
-        queue_on_teleport,
-        queueonteleport,
-        queue_on_tp,
-        (syn and syn.queue_on_teleport) or nil,
-        (fluxus and fluxus.queue_on_teleport) or nil,
-        (krnl and krnl.queue_on_teleport) or nil,
-    }
+local function getAllQueueTeleportFunctions()
+    local results = {}
+    local seen = {}
 
-    for _, fn in ipairs(candidates) do
-        if type(fn) == "function" then
-            return fn
+    local function tryAdd(fn, label)
+        if type(fn) == "function" and not seen[fn] then
+            seen[fn] = true
+            table.insert(results, {func = fn, name = label})
         end
     end
 
-    return nil
+    -- Global functions (berbagai executor)
+    pcall(function() tryAdd(queue_on_teleport, "queue_on_teleport") end)
+    pcall(function() tryAdd(queueonteleport, "queueonteleport") end)
+    pcall(function() tryAdd(queue_on_tp, "queue_on_tp") end)
+
+    -- Executor-specific
+    pcall(function() if syn then tryAdd(syn.queue_on_teleport, "syn.queue_on_teleport") end end)
+    pcall(function() if fluxus then tryAdd(fluxus.queue_on_teleport, "fluxus.queue_on_teleport") end end)
+    pcall(function() if krnl then tryAdd(krnl.queue_on_teleport, "krnl.queue_on_teleport") end end)
+    pcall(function() if getexecutorname then tryAdd(queue_on_teleport, "executor:" .. tostring(getexecutorname())) end end)
+
+    return results
 end
+
+local function buildRequeueSource()
+    local url = CONFIG.REQUEUE_URL
+    if type(url) ~= "string" or url == "" then
+        url = "https://raw.githubusercontent.com/Jokskuyy/Blox-Scripts/main/SummonHero_AutoFarm_Entries.lua"
+    end
+
+    -- Script yang lebih robust: tunggu game load, retry HttpGet, fallback loadfile
+    local source = [[
+repeat task.wait(1) until game:IsLoaded()
+repeat task.wait(0.5) until game:GetService("Players").LocalPlayer
+task.wait(2)
+
+local url = "]] .. url .. [["
+local maxRetries = 5
+local src = nil
+
+for i = 1, maxRetries do
+    local ok, result = pcall(function()
+        return game:HttpGet(url)
+    end)
+    if ok and type(result) == "string" and #result > 100 then
+        src = result
+        break
+    end
+    task.wait(2)
+end
+
+if src then
+    local fn, err = loadstring(src)
+    if fn then
+        fn()
+    else
+        warn("[AutoFarm-Entries] loadstring error: " .. tostring(err))
+    end
+else
+    warn("[AutoFarm-Entries] Failed to fetch script after " .. tostring(maxRetries) .. " retries")
+end
+]]
+    return source
+end
+
+local _queueAlreadySet = false
 
 local function setupTeleportRequeue()
     if not CONFIG.AUTO_REQUEUE_ON_TELEPORT then
         return
     end
 
-    local queueFunc = getQueueTeleportFunction()
-    if not queueFunc then
+    if _queueAlreadySet then
+        log("Queue sudah di-set sebelumnya, skip re-queue")
+        return
+    end
+
+    local queueFuncs = getAllQueueTeleportFunctions()
+    if #queueFuncs == 0 then
         log("queue_on_teleport tidak didukung executor")
         return
     end
 
-    local source = CONFIG.REQUEUE_SOURCE
-    if type(source) ~= "string" or source == "" then
-        source = 'loadstring(game:HttpGet("https://raw.githubusercontent.com/Jokskuyy/Blox-Scripts/main/SummonHero_AutoFarm_Entries.lua"))()'
+    local source = buildRequeueSource()
+    local successNames = {}
+
+    for _, entry in ipairs(queueFuncs) do
+        local ok, err = pcall(function()
+            entry.func(source)
+        end)
+        if ok then
+            table.insert(successNames, entry.name)
+        else
+            log("Queue gagal via " .. entry.name .. ": " .. tostring(err))
+        end
     end
 
-    if type(source) ~= "string" or source == "" then
-        log("REQUEUE_SOURCE kosong, auto re-execute teleport dilewati")
-        return
-    end
-
-    local ok, err = pcall(function()
-        queueFunc(source)
-    end)
-
-    if ok then
-        log("Auto re-execute aktif setelah teleport (queue set)")
+    if #successNames > 0 then
+        _queueAlreadySet = true
+        log("Auto re-execute aktif setelah teleport via: " .. table.concat(successNames, ", "))
     else
-        log("Gagal set queue_on_teleport: " .. tostring(err))
+        log("Semua queue_on_teleport gagal, auto re-execute tidak aktif")
     end
 end
 
@@ -2080,7 +2135,12 @@ env[GLOBAL_KEY] = controller
 setupTeleportRequeue()
 trackConnection(player.OnTeleport:Connect(function(teleportState)
     if teleportState == Enum.TeleportState.Started then
-        log("Teleport Started -> refresh queue")
+        log("Teleport Started detected (queue sudah di-set sebelumnya)")
+    elseif teleportState == Enum.TeleportState.InProgress then
+        log("Teleport InProgress")
+    elseif teleportState == Enum.TeleportState.Failed then
+        log("Teleport Failed -> reset queue flag untuk retry")
+        _queueAlreadySet = false
         setupTeleportRequeue()
     end
 end))
