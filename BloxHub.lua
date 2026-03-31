@@ -1610,19 +1610,64 @@ local function waitForButton(keywords, timeout, statusMsg)
     return nil, nil
 end
 
--- Klik tombol secara programmatik
+-- Klik tombol secara programmatik (multi-method)
 local function clickButton(btn)
     if not btn then return false end
-    local ok = pcall(function()
-        if btn:IsA("TextButton") or btn:IsA("ImageButton") then
-            if firesignal then
-                firesignal(btn.MouseButton1Click)
-            elseif btn.MouseButton1Click then
-                btn.MouseButton1Click:Fire()
-            end
+    
+    local clicked = false
+    
+    -- Method 1: firesignal (paling reliable di banyak executor)
+    pcall(function()
+        if firesignal then
+            firesignal(btn.MouseButton1Click)
+            clicked = true
         end
     end)
-    return ok
+    
+    -- Method 2: firesignal Activated
+    pcall(function()
+        if firesignal and btn.Activated then
+            firesignal(btn.Activated)
+            clicked = true
+        end
+    end)
+    
+    -- Method 3: Fire event langsung
+    pcall(function()
+        btn.MouseButton1Click:Fire()
+        clicked = true
+    end)
+    
+    -- Method 4: Simulate mouse down + up
+    pcall(function()
+        btn.MouseButton1Down:Fire()
+        task.wait(0.05)
+        btn.MouseButton1Up:Fire()
+        clicked = true
+    end)
+    
+    -- Method 5: Virtual Input (gerakkan mouse ke tombol lalu klik)
+    pcall(function()
+        local VIM = game:GetService("VirtualInputManager")
+        local pos = btn.AbsolutePosition
+        local size = btn.AbsoluteSize
+        local cx = pos.X + size.X / 2
+        local cy = pos.Y + size.Y / 2
+        VIM:SendMouseButtonEvent(cx, cy, 0, true, game, 1)
+        task.wait(0.05)
+        VIM:SendMouseButtonEvent(cx, cy, 0, false, game, 1)
+        clicked = true
+    end)
+    
+    -- Method 6: fireproximityprompt / click detector fallback
+    pcall(function()
+        if fireclickdetector then
+            fireclickdetector(btn)
+            clicked = true
+        end
+    end)
+    
+    return clicked
 end
 
 local function toggleFarm()
