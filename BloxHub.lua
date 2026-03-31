@@ -1741,10 +1741,12 @@ local function waitForActionButton(getExactFn, keywords, timeout, statusMsg, fal
             end
         end
 
-        local root = fallbackRootGetter and fallbackRootGetter() or nil
-        local btn, name = findButton(keywords, root)
-        if btn then
-            return btn, name, "fallback"
+        if keywords and #keywords > 0 then
+            local root = fallbackRootGetter and fallbackRootGetter() or nil
+            local btn, name = findButton(keywords, root)
+            if btn then
+                return btn, name, "fallback"
+            end
         end
 
         if statusMsg then
@@ -1821,8 +1823,18 @@ local function clickActionWithRetry(btn, tries, waitAfterClick)
     waitAfterClick = waitAfterClick or 0.8
 
     for _ = 1, tries do
+        if not isGuiActuallyVisible(btn) then
+            return true
+        end
+
         clickButton(btn)
         task.wait(waitAfterClick)
+
+        -- Di beberapa game tombol menghilang sesaat setelah click valid.
+        if not isGuiActuallyVisible(btn) then
+            return true
+        end
+
         if not isRoundEndVisible() then
             return true
         end
@@ -1972,7 +1984,7 @@ task.spawn(function()
 
                 local nextBtn, nextName, nextSource = waitForActionButton(
                     getNextStageButton,
-                    {"next", "continue", "lanjut", "stage"},
+                    nil,
                     3,
                     "Menunggu tombol Next...",
                     getRoundEndFrame
@@ -2003,7 +2015,7 @@ task.spawn(function()
 
                 local restartBtn, restartName, restartSource = waitForActionButton(
                     getRestartButton,
-                    {"restart", "retry", "replay", "again"},
+                    nil,
                     3,
                     "Menunggu tombol Restart...",
                     getRoundEndFrame
