@@ -20,28 +20,17 @@
 -- ============================================
 -- AUTO RE-EXECUTE AFTER TELEPORT
 -- ============================================
--- Ini membuat script otomatis jalan lagi ketika game teleport ke stage baru
-local SCRIPT_SOURCE = game:HttpGet and "https://raw.githubusercontent.com/Jokskuyy/Blox-Scripts/main/BloxHub.lua" or nil
+local BLOX_URL = "https://raw.githubusercontent.com/Jokskuyy/Blox-Scripts/main/BloxHub.lua"
 
-if queue_on_teleport then
-    -- Jika ada URL, gunakan loadstring dari URL
-    if SCRIPT_SOURCE then
-        queue_on_teleport('loadstring(game:HttpGet("' .. SCRIPT_SOURCE .. '", true))()')
+pcall(function()
+    local queueFunc = queue_on_teleport or queueonteleport or queue_on_tp
+    if queueFunc then
+        queueFunc('loadstring(game:HttpGet("' .. BLOX_URL .. '", true))()')
+        print("[✅ Blox Hub] Auto re-execute aktif setelah teleport")
     else
-        -- Fallback: queue seluruh script ini
-        queue_on_teleport(game:HttpGet and game:HttpGet(SCRIPT_SOURCE, true) or "")
+        print("[⚠ Blox Hub] Executor tidak support queue_on_teleport")
     end
-    print("[✅ Blox Hub] queue_on_teleport aktif — auto re-execute saat pindah stage")
-elseif queueonteleport then
-    -- Beberapa executor pakai nama berbeda
-    if SCRIPT_SOURCE then
-        queueonteleport('loadstring(game:HttpGet("' .. SCRIPT_SOURCE .. '", true))()')
-    end
-    print("[✅ Blox Hub] queueonteleport aktif")
-else
-    print("[⚠ Blox Hub] Executor tidak support queue_on_teleport")
-    print("[⚠ Blox Hub] Script harus di-execute ulang manual setelah pindah stage")
-end
+end)
 
 -- ============================================
 -- SERVICES
