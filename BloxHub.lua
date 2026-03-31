@@ -1509,86 +1509,6 @@ local function findButton(keywords)
     return nil, nil
 end
 
-local function normalizeGuiText(s)
-    s = tostring(s or ""):lower()
-    s = s:gsub("%s+", "")
-    s = s:gsub("[%p%c]", "")
-    return s
-end
-
-local function findReadyButton()
-    local pg = player:FindFirstChild("PlayerGui")
-    if not pg then return nil, nil end
-
-    -- Pass 1: exact/strong matches only
-    for _, obj in ipairs(pg:GetDescendants()) do
-        if (obj:IsA("TextButton") or obj:IsA("ImageButton")) and isGuiActuallyVisible(obj) then
-            local n = normalizeGuiText(obj.Name)
-            local t = obj:IsA("TextButton") and normalizeGuiText(obj.Text) or ""
-            if n == "readybutton" or n == "ready" or t == "ready" or t == "siap" then
-                return obj, obj:GetFullName()
-            end
-        end
-    end
-
-    -- Pass 2: relaxed match
-    for _, obj in ipairs(pg:GetDescendants()) do
-        if (obj:IsA("TextButton") or obj:IsA("ImageButton")) and isGuiActuallyVisible(obj) then
-            local n = normalizeGuiText(obj.Name)
-            local t = obj:IsA("TextButton") and normalizeGuiText(obj.Text) or ""
-            if n:find("readybutton", 1, true) or t:find("ready", 1, true) or t:find("siap", 1, true) then
-                return obj, obj:GetFullName()
-            end
-        end
-    end
-
-    return nil, nil
-end
-
-local function findStartButton()
-    local pg = player:FindFirstChild("PlayerGui")
-    if not pg then return nil, nil end
-
-    local exactLabels = {
-        start = true,
-        play = true,
-        mulai = true,
-        battle = true,
-        enter = true,
-    }
-
-    -- Pass 1: exact/strong matches only
-    for _, obj in ipairs(pg:GetDescendants()) do
-        if (obj:IsA("TextButton") or obj:IsA("ImageButton")) and isGuiActuallyVisible(obj) then
-            local n = normalizeGuiText(obj.Name)
-            local t = obj:IsA("TextButton") and normalizeGuiText(obj.Text) or ""
-            if n == "startbutton" or n == "playbutton" or exactLabels[t] then
-                return obj, obj:GetFullName()
-            end
-        end
-    end
-
-    -- Pass 2: relaxed match
-    for _, obj in ipairs(pg:GetDescendants()) do
-        if (obj:IsA("TextButton") or obj:IsA("ImageButton")) and isGuiActuallyVisible(obj) then
-            local n = normalizeGuiText(obj.Name)
-            local t = obj:IsA("TextButton") and normalizeGuiText(obj.Text) or ""
-            if n:find("startbutton", 1, true)
-                or n:find("playbutton", 1, true)
-                or t:find("start", 1, true)
-                or t:find("play", 1, true)
-                or t:find("mulai", 1, true)
-                or t:find("battle", 1, true)
-                or t:find("enter", 1, true)
-            then
-                return obj, obj:GetFullName()
-            end
-        end
-    end
-
-    return nil, nil
-end
-
 -- Navigate ke RoundEnd > Frame (shared helper)
 local function getRoundEndFrame()
     local pg = player:FindFirstChild("PlayerGui")
@@ -1630,37 +1550,7 @@ local function getNextStageButton()
     return buttons:FindFirstChild("NextStageButton")
 end
 
-<<<<<<< HEAD
-local function getLobbyButton()
-    local buttons = getRoundEndButtonsContainer()
-    if not buttons then return nil end
-    return buttons:FindFirstChild("LobbyButton")
-end
-
-local function parseEntriesLeftText(text)
-    if type(text) ~= "string" or text == "" then return nil end
-    local lo = text:lower()
-
-    if lo:find("no daily rewards left", 1, true) or lo:find("no rewards left", 1, true) then
-        return 0
-    end
-
-    local num =
-        lo:match("(%d+)%s*daily%s*rewards%s*left") or
-        lo:match("(%d+)%s*rewards%s*left") or
-        lo:match("(%d+)%s*entries%s*left") or
-        lo:match("(%d+)%s*left")
-
-    if num then
-        return tonumber(num)
-    end
-    return nil
-end
-
--- Baca EntriesLeft dari path exact dulu, lalu fallback scan teks RoundEnd
-=======
 -- Baca EntriesLeft → "4 daily rewards left for..." → return angka
->>>>>>> parent of 614f636 (Refactor farm flow with adaptive startup and EntriesLeft-driven logic)
 local function getEntriesLeft()
     local frame = getRoundEndFrame()
     if not frame then return nil end
@@ -1709,25 +1599,7 @@ local function waitForRoundEnd(timeout, statusMsg)
     local elapsed = 0
     local lastDebugAt = 0
     while farming and elapsed < timeout do
-<<<<<<< HEAD
-        if getExactFn then
-            local exactBtn = getExactFn()
-            if isGuiActuallyVisible(exactBtn) then
-                return exactBtn, exactBtn.Name, "exact"
-            end
-        end
-
-        if keywords and #keywords > 0 then
-            local root = fallbackRootGetter and fallbackRootGetter() or nil
-            local btn, name = findButton(keywords, root)
-            if btn then
-                return btn, name, "fallback"
-            end
-        end
-
-=======
         if isRoundEndVisible() then return true end
->>>>>>> parent of 614f636 (Refactor farm flow with adaptive startup and EntriesLeft-driven logic)
         if statusMsg then
             refs.FarmStatus.Text = statusMsg .. " (" .. elapsed .. "s)"
         end
@@ -1761,97 +1633,69 @@ local function waitForButton(keywords, timeout, statusMsg)
     return nil, nil
 end
 
--- Klik tombol secara programmatik — coba SEMUA method
+-- Klik tombol secara programmatik (multi-method)
 local function clickButton(btn)
     if not btn then return false end
     
-    local methods = {}
+    local clicked = false
     
-    -- Method 1: firesignal MouseButton1Click
+    -- Method 1: firesignal (paling reliable di banyak executor)
     pcall(function()
         if firesignal then
             firesignal(btn.MouseButton1Click)
-            table.insert(methods, "firesignal")
+            clicked = true
         end
     end)
     
     -- Method 2: firesignal Activated
     pcall(function()
-        if firesignal then
+        if firesignal and btn.Activated then
             firesignal(btn.Activated)
-            table.insert(methods, "Activated")
+            clicked = true
         end
     end)
     
-    -- Method 3: Direct Fire
+    -- Method 3: Fire event langsung
     pcall(function()
         btn.MouseButton1Click:Fire()
-        table.insert(methods, "Fire()")
+        clicked = true
     end)
     
-    -- Method 4: MouseButton1Down + Up
+    -- Method 4: Simulate mouse down + up
     pcall(function()
         btn.MouseButton1Down:Fire()
         task.wait(0.05)
         btn.MouseButton1Up:Fire()
-        table.insert(methods, "Down+Up")
+        clicked = true
     end)
     
-    -- Method 5: Virtual Input Manager
+    -- Method 5: Virtual Input (HANYA jika posisi valid — cegah klik di taskbar)
     pcall(function()
         local VIM = game:GetService("VirtualInputManager")
         local pos = btn.AbsolutePosition
         local size = btn.AbsoluteSize
         local cx = pos.X + size.X / 2
         local cy = pos.Y + size.Y / 2
-        VIM:SendMouseButtonEvent(cx, cy, 0, true, game, 1)
-        task.wait(0.05)
-        VIM:SendMouseButtonEvent(cx, cy, 0, false, game, 1)
-        table.insert(methods, "VIM")
-    end)
-    
-    -- Method 6: fireclick (beberapa executor)
-    pcall(function()
-        if fireclick then
-            fireclick(btn)
-            table.insert(methods, "fireclick")
-        end
-    end)
-    
-    -- Method 7: mouse1click di posisi button
-    pcall(function()
-        if mousemoveabs and mouse1click then
-            local pos = btn.AbsolutePosition
-            local size = btn.AbsoluteSize
-            mousemoveabs(pos.X + size.X/2, pos.Y + size.Y/2)
+        -- Safety: jangan klik jika posisi di (0,0) atau terlalu kecil
+        if cx > 10 and cy > 10 and size.X > 5 and size.Y > 5 then
+            VIM:SendMouseButtonEvent(cx, cy, 0, true, game, 1)
             task.wait(0.05)
-            mouse1click()
-            table.insert(methods, "mouse1click")
+            VIM:SendMouseButtonEvent(cx, cy, 0, false, game, 1)
+            clicked = true
         end
     end)
     
-    -- Log method yang berhasil (debug, hanya sekali)
-    if #methods > 0 then
-        print("[BloxHub] Click methods: " .. table.concat(methods, ", "))
-    else
-        print("[BloxHub] ⚠ TIDAK ADA method click yang berhasil!")
-    end
+    -- Method 6: fireproximityprompt / click detector fallback
+    pcall(function()
+        if fireclickdetector then
+            fireclickdetector(btn)
+            clicked = true
+        end
+    end)
     
-    return #methods > 0
+    return clicked
 end
 
-<<<<<<< HEAD
--- Klik tombol lalu tunggu — tidak perlu retry berlebihan
-local function clickAndWait(btn, waitTime)
-    waitTime = waitTime or 1.5
-    if not btn then return false end
-    local result = clickButton(btn)
-    task.wait(waitTime)
-    return result
-end
-
-=======
->>>>>>> parent of 614f636 (Refactor farm flow with adaptive startup and EntriesLeft-driven logic)
 local function toggleFarm()
     farming = not farming
     if farming then
@@ -1896,46 +1740,7 @@ end)
 --   EntriesLeft: RoundEnd > Frame > Contents > EntriesLeft ("X daily rewards left...")
 -- ============================================
 task.spawn(function()
-<<<<<<< HEAD
-    local roundEndCycleActive = false
-    local pendingRoundDecision = nil -- "next" | "restart" | "transition"
-    local lastActionAt = 0
-    local preBattleGraceUntil = 0
-    local lastStatusKey = ""
-    local warnAt = {
-        entries = 0,
-        next = 0,
-        restart = 0,
-    }
-
-    local function canAct(interval)
-        interval = interval or 1
-        return (os.clock() - lastActionAt) >= interval
-    end
-
-    local function markAct()
-        lastActionAt = os.clock()
-    end
-
-    local function setFarmStatus(key, text, color)
-        if lastStatusKey ~= key or refs.FarmStatus.Text ~= text then
-            refs.FarmStatus.Text = text
-            refs.FarmStatus.TextColor3 = color
-            lastStatusKey = key
-        end
-    end
-
-    local function logWarn(key, interval, msg, color)
-        local now = os.clock()
-        interval = interval or 3
-        if now - (warnAt[key] or 0) >= interval then
-            warnAt[key] = now
-            addFarmLog(msg, color or C.orange)
-        end
-    end
-=======
     local isFirstRun = true
->>>>>>> parent of 614f636 (Refactor farm flow with adaptive startup and EntriesLeft-driven logic)
 
     while true do
         if not farming then
@@ -1944,147 +1749,15 @@ task.spawn(function()
             continue
         end
 
-<<<<<<< HEAD
-        local roundEndVisible = isRoundEndVisible()
-
-        if roundEndVisible then
-            if not roundEndCycleActive then
-                roundEndCycleActive = true
-                pendingRoundDecision = nil
-                preBattleGraceUntil = 0
-                farmTotalReplays = farmTotalReplays + 1
-                addFarmLog("⚔ Battle selesai! Total run: " .. farmTotalReplays, C.green)
-
-                local rewardSnapshot = getRoundRewardSnapshot()
-                if rewardSnapshot then
-                    addFarmLog("🎁 Rewards: " .. rewardSnapshot, C.textDim)
-                end
-            end
-
-            if pendingRoundDecision == "transition" then
-                setFarmStatus("roundend-transition", "Status: ⏳ Transisi Stage...", C.cyan)
-                task.wait(0.6)
-                continue
-            end
-
-            if pendingRoundDecision == nil then
-                local entriesLeft, entriesText = waitForEntriesLeft(2)
-                if entriesLeft ~= nil then
-                    refs.ReplayVal.Text = tostring(entriesLeft) .. " left"
-                    addFarmLog("📦 Entries left: " .. entriesLeft .. " — " .. tostring(entriesText), C.gold)
-                    pendingRoundDecision = (entriesLeft <= 0) and "next" or "restart"
-                else
-                    refs.ReplayVal.Text = "?"
-
-                    local nextVisible = isGuiActuallyVisible(getNextStageButton())
-                    local restartVisible = isGuiActuallyVisible(getRestartButton())
-                    if nextVisible and not restartVisible then
-                        pendingRoundDecision = "next"
-                        logWarn("entries", 4, "ℹ EntriesLeft belum kebaca, pakai indikator tombol NEXT", C.textDim)
-                    elseif restartVisible then
-                        pendingRoundDecision = "restart"
-                        logWarn("entries", 4, "ℹ EntriesLeft belum kebaca, pakai indikator tombol RESTART", C.textDim)
-                    else
-                        setFarmStatus("roundend-wait", "Status: Menunggu EntriesLeft...", C.orange)
-                        task.wait(0.5)
-                        continue
-                    end
-                end
-            end
-
-            if pendingRoundDecision == "next" then
-                setFarmStatus("roundend-next", "Status: 🔄 Next Stage...", C.gold)
-
-                local nextBtn, nextName, nextSource = waitForActionButton(
-                    getNextStageButton,
-                    nil,
-                    3,
-                    "Menunggu tombol Next...",
-                    getRoundEndFrame
-                )
-
-                if nextBtn and canAct(0.7) then
-                    clickAndWait(nextBtn, 2)
-                    markAct()
-                    addFarmLog("➡ Next clicked (" .. nextSource .. "): " .. nextName, C.cyan)
-                    farmTotalStages = farmTotalStages + 1
-                    refs.StageVal.Text = tostring(farmTotalStages)
-                    pendingRoundDecision = "transition"
-                elseif not nextBtn then
-                    local lobbyBtn = getLobbyButton()
-                    if isGuiActuallyVisible(lobbyBtn) then
-                        logWarn("next", 4, "ℹ LobbyButton tersedia, tetap tunggu Next", C.textDim)
-                    end
-                    logWarn("next", 3, "⚠ NextStageButton belum muncul", C.orange)
-                    task.wait(0.7)
-                end
-            else
-                setFarmStatus("roundend-restart", "Status: 🔁 Restart...", C.gold)
-
-                local restartBtn, restartName, restartSource = waitForActionButton(
-                    getRestartButton,
-                    nil,
-                    3,
-                    "Menunggu tombol Restart...",
-                    getRoundEndFrame
-                )
-
-                if restartBtn and canAct(0.7) then
-                    clickAndWait(restartBtn, 2)
-                    markAct()
-                    addFarmLog("🔁 Restart clicked (" .. restartSource .. "): " .. restartName, C.cyan)
-                    pendingRoundDecision = "transition"
-                elseif not restartBtn then
-                    logWarn("restart", 3, "⚠ RestartButton belum muncul", C.orange)
-                    task.wait(0.7)
-                end
-            end
-        else
-            if roundEndCycleActive then
-                roundEndCycleActive = false
-                pendingRoundDecision = nil
-            end
-
-            if os.clock() < preBattleGraceUntil then
-                setFarmStatus("pre-grace", "Status: Menunggu battle mulai...", C.cyan)
-                task.wait(0.6)
-                continue
-            end
-
-            local readyBtn, readyName = findReadyButton()
-            if readyBtn then
-                setFarmStatus("pre-ready", "Status: ✅ Menekan Ready...", C.green)
-                if canAct(1) then
-                    clickButton(readyBtn)
-                    markAct()
-                    preBattleGraceUntil = os.clock() + 12
-                    addFarmLog("✅ Ready: " .. readyName, C.green)
-                end
-                task.wait(0.8)
-                continue
-            end
-=======
         -- ════════════════════════════════════
         -- STEP 1: Tombol Start (hanya pertama kali)
         -- ════════════════════════════════════
         if isFirstRun then
             refs.FarmStatus.Text = "Status: Mencari Start..."
             refs.FarmStatus.TextColor3 = C.orange
->>>>>>> parent of 614f636 (Refactor farm flow with adaptive startup and EntriesLeft-driven logic)
 
-            local startBtn, startName = findStartButton()
+            local startBtn, startName = findButton({"start", "play", "enter", "mulai", "battle"})
             if startBtn then
-<<<<<<< HEAD
-                setFarmStatus("pre-start", "Status: 🎮 Menekan Start...", C.cyan)
-                if canAct(1) then
-                    clickButton(startBtn)
-                    markAct()
-                    preBattleGraceUntil = os.clock() + 5
-                    addFarmLog("🎮 Start: " .. startName, C.cyan)
-                end
-                task.wait(0.8)
-                continue
-=======
                 addFarmLog("🎮 Start: " .. startName, C.cyan)
                 clickButton(startBtn)
                 task.wait(2)
@@ -2148,7 +1821,6 @@ task.spawn(function()
                 local remaining = farmReplaysPerStage - farmCurrentReplay
                 addFarmLog("📦 Counter: " .. remaining .. " tersisa (manual)", C.gold)
                 refs.ReplayVal.Text = farmCurrentReplay .. " / " .. farmReplaysPerStage
->>>>>>> parent of 614f636 (Refactor farm flow with adaptive startup and EntriesLeft-driven logic)
             end
 
             task.wait(0.5)
