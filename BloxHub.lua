@@ -1758,12 +1758,25 @@ local function waitForActionButton(getExactFn, keywords, timeout, statusMsg, fal
     return nil, nil, nil
 end
 
--- Klik tombol secara programmatik (stop setelah method pertama berhasil)
+-- Klik tombol secara programmatik
+-- Fire SEMUA method karena pcall success != tombol terklik di game
 local function clickButton(btn)
     if not btn then return false end
     
-    -- Method 1: Virtual Input (paling reliable — simulasi mouse asli)
-    local ok1 = pcall(function()
+    -- Method 1: firesignal (executor-specific, paling umum)
+    pcall(function()
+        if firesignal then
+            firesignal(btn.MouseButton1Click)
+        end
+    end)
+    
+    -- Method 2: Fire event langsung
+    pcall(function()
+        btn.MouseButton1Click:Fire()
+    end)
+    
+    -- Method 3: Virtual Input (simulasi mouse)
+    pcall(function()
         local VIM = game:GetService("VirtualInputManager")
         local pos = btn.AbsolutePosition
         local size = btn.AbsoluteSize
@@ -1773,31 +1786,8 @@ local function clickButton(btn)
         task.wait(0.05)
         VIM:SendMouseButtonEvent(cx, cy, 0, false, game, 1)
     end)
-    if ok1 then return true end
     
-    -- Method 2: firesignal
-    local ok2 = pcall(function()
-        if firesignal then
-            firesignal(btn.MouseButton1Click)
-        end
-    end)
-    if ok2 and firesignal then return true end
-    
-    -- Method 3: Fire event langsung
-    local ok3 = pcall(function()
-        btn.MouseButton1Click:Fire()
-    end)
-    if ok3 then return true end
-    
-    -- Method 4: MouseButton1Down + Up
-    local ok4 = pcall(function()
-        btn.MouseButton1Down:Fire()
-        task.wait(0.05)
-        btn.MouseButton1Up:Fire()
-    end)
-    if ok4 then return true end
-    
-    return false
+    return true
 end
 
 -- Klik tombol lalu tunggu — tidak perlu retry berlebihan
